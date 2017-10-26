@@ -1,0 +1,36 @@
+{
+  "name": "dts-bundler",
+  "version": "0.1.0",
+  "description": "Bundle existing *.d.ts files into one",
+  "main": "dist/index.js",
+  "scripts": {
+    "compile": "tsc -p ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ajafff/dts-bundler.git"
+  },
+  "keywords": [
+    "typescript",
+    "declaration",
+    "bundle",
+    "d.ts",
+    "outfile"
+  ],
+  "author": "Klaus Meinhardt",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/ajafff/dts-bundler/issues"
+  },
+  "homepage": "https://github.com/ajafff/dts-bundler#readme",
+  "files": [
+    "dist"
+  ],
+  "devDependencies": {
+    "@types/node": "^8.0.47",
+    "typescript": "^2.7.0-dev.20171026"
+  },
+  "peerDependencies": {
+    "typescript": "^2.4.0"
+  }
+}
