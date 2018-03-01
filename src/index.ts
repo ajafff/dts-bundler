@@ -1,51 +1,53 @@
 import * as ts from 'typescript';
-import * as fs from 'fs';
-import * as path from 'path';
 
-export function bundle(entry: string): string {
-    const filesSeen = new Set<string>();
-    const imports = new Map<string, Set<string>>();
-
-    const result: string[] = []
-
-    function processFile(fileName: string) {
-        if (filesSeen.has(fileName))
-            return;
-        filesSeen.add(fileName);
-
-        const sourceFile = ts.createSourceFile(fileName, fs.readFileSync(fileName, 'utf8'), ts.ScriptTarget.ES5);
-        for (const statement of sourceFile.statements) {
-            if (ts.isImportDeclaration(statement) && statement.importClause !== undefined) {
-                if (!ts.isStringLiteral(statement.moduleSpecifier))
-                    continue;
-
-                if (ts.isExternalModuleNameRelative(statement.moduleSpecifier.text)) {
-                    processFile(path.resolve(path.dirname(fileName), statement.moduleSpecifier.text) + '.d.ts');
-                } else if (statement.importClause.namedBindings !== undefined &&
-                        ts.isNamedImports(statement.importClause.namedBindings)){
-                    if (!imports.has(statement.moduleSpecifier.text))
-                        imports.set(statement.moduleSpecifier.text, new Set())
-                    const specifiers = imports.get(statement.moduleSpecifier.text)!;
-                    for (const binding of statement.importClause.namedBindings.elements) {
-                        specifiers.add(binding.name.text);
-                    }
+export function bundle(entry: string) {
+    const program = ts.createProgram([entry], {});
+    const checker = program.getTypeChecker();
+    const file = program.getSourceFile(entry)!;
+    const moduleSymbol = checker.getSymbolAtLocation(file)!;
+    const exports = checker.getExportsOfModule(moduleSymbol);
+    const transformer: ts.TransformerFactory<ts.Node> = (context) => (rootNode) => {
+        if (ts.isVariableDeclaration(rootNode)) {
+            rootNode = ts.createVariableStatement(
+                [ts.createToken(ts.SyntaxKind.ExportKeyword), ts.createToken(ts.SyntaxKind.DeclareKeyword)],
+                ts.createVariableDeclarationList([rootNode], rootNode.parent!.flags),
+            )
+        }
+        return ts.visitNode(rootNode, function visit(node) {
+            node = ts.visitEachChild(node, visit, context);
+            if (ts.isArrayTypeNode(node)) {
+                node = ts.createTypeReferenceNode('Array', [unwrapParens(node.elementType)]);
+            } else if (ts.isFunctionTypeNode(node) || ts.isConstructorTypeNode(node)) {
+                node = ts.createTypeLiteralNode([ts[node.kind === ts.SyntaxKind.FunctionType ? 'createCallSignature' : 'createConstructSignature'](node.typeParameters && node.typeParameters.slice(), node.parameters.slice(), node.type)]);
+            } else if (ts.isParenthesizedTypeNode(node)) {
+                if (ts.isTypeLiteralNode(node.type)) {
+                    node = node.type;
                 }
-            } else if (ts.isExportDeclaration(statement) &&
-                    statement.moduleSpecifier !== undefined &&
-                    ts.isStringLiteral(statement.moduleSpecifier) &&
-                    (ts as any).isExternalModuleNameRelative(statement.moduleSpecifier.text)) {
-                processFile(path.resolve(path.dirname(fileName), statement.moduleSpecifier.text) + '.d.ts');
-            } else {
-                result.push(statement.getFullText(sourceFile).trim());
             }
+            return node;
+        });
+    }
+    const printer = ts.createPrinter();
+    for (let e of exports.sort((a, b) => a.name.localeCompare(b.name))) {
+        console.log();
+        if (e.flags & ts.SymbolFlags.Alias)
+            e = checker.getAliasedSymbol(e);
+        if (!e.declarations)
+            continue;
+        for (const d of e.declarations.sort((a, b) => a.kind - b.kind || a.pos - b.pos)) {
+            const sourceFile = d.getSourceFile();
+            if (program.isSourceFileFromExternalLibrary(sourceFile))
+                continue;
+            const transformed = ts.transform(d, [transformer]).transformed[0];
+            console.log(printer.printNode(ts.EmitHint.Unspecified, transformed, sourceFile));
         }
     }
-
-    processFile(path.resolve(entry));
-
-    imports.forEach((specifiers, moduleName) => {
-        result.push(`import {${Array.from(specifiers).join(', ')}} from '${moduleName}'`);
-    });
-
-    return result.join('\n');
 }
+
+function unwrapParens(type: ts.TypeNode) {
+    while (ts.isParenthesizedTypeNode(type))
+        type = type.type;
+    return type;
+}
+
+bundle(process.argv[2]);
