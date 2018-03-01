@@ -1,6 +1,6 @@
 import { WrappedAst } from "tsutils";
 export { isIdentifier } from 'tsutils';
-export * from './other';
+export { Reexport } from './other';
 export declare function bundle(entry: string): void;
 export declare const nested: number, deeplyNested: number;
 declare let nested2: number;
